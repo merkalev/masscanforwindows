@@ -1,4 +1,4 @@
-name: Build Masscan (MINGW64 / MSYS2)
+name: Build Masscan (MSYS2 / MinGW64)
 
 on:
   push:
@@ -10,49 +10,58 @@ on:
 jobs:
   build-windows-mingw:
     runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+
     steps:
-      - name: Checkout
+      - name: Checkout source
         uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Setup MSYS2 (MINGW64) and update
+      - name: Setup MSYS2 (MINGW64)
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
           update: true
           install: >
             mingw-w64-x86_64-toolchain
-            mingw-w64-x86_64-pkg-config
             mingw-w64-x86_64-libpcap
+            mingw-w64-x86_64-pkg-config
             make
             git
 
-      - name: Show MSYS2 info
-        run: bash -lc 'echo "MSYSTEM=$MSYSTEM"; uname -a; which gcc; gcc --version; pacman -Qi mingw-w64-x86_64-libpcap || true'
-
-      - name: Build masscan (MINGW64)
-        # run commands inside the MSYS2 MINGW64 environment
+      - name: Verify environment
         run: |
-          set -e
-          # ensure mingw binaries are in PATH
-          export PATH="/mingw64/bin:$PATH"
+          echo "=== MSYS2 Build Environment ==="
+          echo "MSYSTEM=$MSYSTEM"
+          uname -a
+          which gcc
           gcc --version
-          # adapt to masscan's build system: usually there's a Makefile. Adjust if yours differs.
-          # fetch submodules (already done by actions/checkout recursive, but safe to ensure)
-          git submodule update --init --recursive || true
-          # Clean then build
-          make clean || true
-          # If masscan's Makefile expects CC variable, use the mingw64 gcc
-          make -j$(nproc) CC=gcc
-          # produced binary is typically `bin/masscan.exe` or `masscan.exe` depending on repo
-          ls -lah || true
+          echo "libpcap:"
+          pacman -Qi mingw-w64-x86_64-libpcap || true
 
-      - name: Upload exe artifact
+      - name: Build Masscan (MINGW64)
+        run: |
+          echo "=== Building Masscan ==="
+          export PATH="/mingw64/bin:$PATH"
+          git submodule update --init --recursive || true
+
+          # Clean and rebuild
+          make clean || true
+          make -j$(nproc) CC=gcc || make CC=gcc
+
+          echo "=== Build output ==="
+          find . -type f -iname "masscan.exe" || true
+          ls -lah bin || true
+
+      - name: Upload compiled executables
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: masscan-windows-exe
+          name: masscan-windows-mingw64
           path: |
-            masscan.exe
-            bin/masscan.exe
+            **/masscan.exe
+            bin/*.exe
             dist/*.exe
